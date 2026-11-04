@@ -3,7 +3,7 @@ import { db } from "./db";
 import { getSettings } from "./settings";
 import { getProvider, type ParsedWebhook } from "./payments";
 import { downloadToken, generateLicenseKey, orderAccessKey } from "./tokens";
-import { renderOrderEmail, sendEmail } from "./email";
+import { renderOrderEmail, renderOrderText, sendEmail } from "./email";
 import type { LineItem } from "./pricing";
 import type { Order } from "@prisma/client";
 
@@ -99,17 +99,36 @@ export async function sendOrderEmail(orderId: string) {
     getSettings(),
     getDeliverables(orderId),
   ]);
-  const html = renderOrderEmail({
+  const opts = {
     storeName: settings.store.name,
+    logoUrl: settings.store.logoUrl,
+    primary: settings.theme.primary,
+    primary2: settings.theme.primary2,
     name: order.name,
+    email: order.email,
     orderId: order.id,
+    paidAt: order.paidAt,
+    lines: ((order.items as LineItem[] | null) ?? []).map((l) => ({ title: l.title, price: l.price })),
+    subtotal: order.subtotal,
+    discount: order.discount,
+    couponCode: order.couponCode,
     total: order.total,
+    utr: order.utr,
     orderUrl: orderUrl(order.id),
     items: items.filter((i) => !i.revoked),
     supportWhatsapp: settings.store.supportWhatsapp,
+    supportEmail: settings.store.supportEmail,
+    mainSiteUrl: settings.store.mainSiteUrl,
     expiryDays: settings.delivery.downloadExpiryDays,
-  });
-  const res = await sendEmail(order.email, `Your ${settings.store.name} order is ready 🚀`, html);
+  };
+  const title = items.length === 1 ? items[0].title : `your ${settings.store.name} order`;
+  const res = await sendEmail(
+    order.email,
+    `✅ Your access to ${title} is ready`,
+    renderOrderEmail(opts),
+    renderOrderText(opts),
+    settings.store.supportEmail || undefined,
+  );
   if (res.ok) await db.order.update({ where: { id: orderId }, data: { emailSentAt: new Date() } });
   return res;
 }
