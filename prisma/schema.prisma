@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum ProductStatus {
+  DRAFT
+  LIVE
+  ARCHIVED
+}
+
+enum DeliveryType {
+  FILE
+  LINK
+  LICENSE
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FULFILLED
+  REVIEW
+  FAILED
+  EXPIRED
+  CANCELLED
+  REVOKED
+}
+
+enum SettlementState {
+  NOT_RECONCILED
+  RECONCILED
+}
+
+model Product {
+  id                 String        @id @default(cuid())
+  slug               String        @unique
+  title              String
+  subtitle           String?
+  description        String        @default("") // markdown
+  images             String[]
+  price              Int // paise
+  compareAtPrice     Int? // paise
+  currency           String        @default("INR")
+  status             ProductStatus @default(DRAFT)
+  sortOrder          Int           @default(0)
+  stockLimit         Int?
+  soldCount          Int           @default(0)
+  saleEndsAt         DateTime?
+  salePrice          Int? // price after saleEndsAt passes; null = compareAtPrice
+  badge              String?
+  videoUrl           String?
+  deliveryType       DeliveryType  @default(FILE)
+  fileKey            String?
+  fileName           String?
+  externalUrl        String?
+  autoLicense        Boolean       @default(false)
+  allowedGateways    String[]      @default(["youpi", "razorpay"])
+  bonusItems         Json          @default("[]") // [{title, value}]
+  features           String[]
+  orderBumpProductId String?
+  orderBumpPrice     Int?
+  guaranteeText      String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  licenseKeys  LicenseKey[]
+  entitlements Entitlement[]
+}
+
+model LicenseKey {
+  id        String   @id @default(cuid())
+  productId String
+  key       String
+  orderId   String?
+  claimedAt DateTime?
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, key])
+  @@index([productId, orderId])
+}
+
+model Order {
+  id               String          @id @default(cuid())
+  email            String
+  name             String
+  phone            String?
+  city             String?
+  items            Json // [{productId, title, price, bump?}]
+  subtotal         Int
+  discount         Int             @default(0)
+  total            Int
+  couponCode       String?
+  gateway          String
+  gatewayPaymentId String?
+  status           OrderStatus     @default(PENDING)
+  settlementState  SettlementState @default(NOT_RECONCILED)
+  utr              String?
+  paidAt           DateTime?
+  fulfilledAt      DateTime?
+  emailSentAt      DateTime?
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  entitlements Entitlement[]
+
+  @@index([status, createdAt])
+  @@index([email])
+}
+
+model Entitlement {
+  id            String    @id @default(cuid())
+  orderId       String
+  productId     String
+  licenseKey    String?
+  externalUrl   String?
+  expiresAt     DateTime?
+  downloadCount Int       @default(0)
+  maxDownloads  Int       @default(5)
+  revoked       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, productId])
+}
+
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  deliveryId  String
+  event       String
+  payload     Json
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([provider, deliveryId])
+}
+
+model PageSection {
+  id        String  @id @default(cuid())
+  page      String  @default("home")
+  type      String
+  sortOrder Int     @default(0)
+  enabled   Boolean @default(true)
+  config    Json    @default("{}")
+
+  @@index([page, sortOrder])
+}
+
+model Video {
+  id        String  @id @default(cuid())
+  title     String
+  url       String
+  caption   String?
+  featured  Boolean @default(false)
+  sortOrder Int     @default(0)
+  enabled   Boolean @default(true)
+}
+
+model Testimonial {
+  id        String  @id @default(cuid())
+  name      String
+  role      String?
+  avatarUrl String?
+  quote     String
+  rating    Int     @default(5)
+  sortOrder Int     @default(0)
+  enabled   Boolean @default(true)
+}
+
+model Faq {
+  id        String  @id @default(cuid())
+  question  String
+  answer    String
+  sortOrder Int     @default(0)
+  enabled   Boolean @default(true)
+}
+
+model Coupon {
+  id         String    @id @default(cuid())
+  code       String    @unique
+  type       String    @default("PERCENT") // PERCENT | FLAT
+  value      Int // percent (1-100) or paise
+  maxUses    Int?
+  usedCount  Int       @default(0)
+  expiresAt  DateTime?
+  productIds String[]
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String
+  action    String
+  target    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+}

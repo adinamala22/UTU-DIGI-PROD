@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# UTU Store: URL Tune Up Digital Products
 
-## Getting Started
+A storefront built for high-urgency sales, with an admin dashboard where you can change every part of the store. Payments go through a self-hosted **YouPI-PG** (UPI), with **Razorpay** as a fallback.
 
-First, run the development server:
+Built with Next.js 15, Prisma and Postgres, Tailwind v4 and Framer Motion.
+
+## Quick start (local)
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npx prisma dev -n utu-store --detach   # local Postgres (or point DATABASE_URL at Neon/Supabase)
+cp .env.example .env                    # fill in AUTH_SECRET, ADMIN_PASSWORD, DATABASE_URL
+npm run db:push && npm run db:seed
+npm run dev                             # http://localhost:3000  ·  admin: /admin
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Test payments without a real gateway
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run mock:youpi                                  # fake YouPI on :6100 (sends signed webhooks)
+npx tsx --env-file=.env scripts/e2e-youpi.ts        # full end-to-end payment checks
+npm test                                            # unit tests
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+In `.env`, set `YOUPI_API_URL=http://localhost:6100`. After you check out, the mock's checkout page has a **"Simulate UPI payment"** button.
 
-## Learn More
+> **Local `prisma dev` only:** keep `pgbouncer=true` in `DATABASE_URL`. Without it you get "prepared statement already exists" errors.
 
-To learn more about Next.js, take a look at the following resources:
+## How payments work
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. `/api/checkout` recomputes the price on the server and creates a `PENDING` order. It then calls YouPI `POST /api/v1/payments` (or creates a Razorpay order) and redirects the buyer.
+2. The gateway webhook arrives at `/api/webhooks/youpi` or `/api/webhooks/razorpay`, and the handler:
+   - verifies the HMAC on the raw body (YouPI V2 signatures also get a 5-minute timestamp window);
+   - deduplicates on the delivery id;
+   - **re-checks the payment status with the gateway** and confirms the amount matches.
+3. If everything checks out, the order becomes `FULFILLED` and the buyer is delivered:
+   - **FILE**: a signed download link that expires and has a download limit;
+   - **LINK**: the external access URL is revealed;
+   - **LICENSE**: a key from the pool, or a generated one;
+   - plus an email with everything.
+4. The order page polls `/api/orders/:id/status`. It also pulls the status from the gateway itself, in case a webhook is lost.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+YouPI events and what the store does:
 
-## Deploy on Vercel
+| YouPI event | Store action |
+|---|---|
+| `OBSERVED_SUCCESS` (UPI with UTR) | Deliver now, flagged **NOT_RECONCILED** |
+| `RECONCILED` | Mark reconciled |
+| `MANUAL_REVIEW` | Order goes to `REVIEW`; approve it in Admin → Orders |
+| `FAILED`, `EXPIRED`, `CANCELLED` | Order is closed |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+From the admin you can **revoke** an order, which kills its download links, and **approve** a payment after checking the UTR in your bank app.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Deploying
+
+**Shop** (Vercel or any Node host), at `shop.urltuneup.com`:
+- Set every variable from `.env.example`.
+- On serverless hosts, use R2 for storage (`S3_*` and `S3_PUBLIC_*`), because local disk isn't persistent there.
+
+**YouPI-PG** (always-on VPS), at `pay.urltuneup.com`:
+- Run it from https://github.com/youpi-pg/YouPI-PG and enrol the Android SMS observer.
+- Set its webhook URL to `https://shop.urltuneup.com/api/webhooks/youpi`, and copy the merchant webhook secret into `YOUPI_WEBHOOK_SECRET`.
+- Brand its checkout page with its own env vars:
+  - `DEFAULT_APP_NAME="URL Tune Up Pay"`
+  - `DEFAULT_PRIMARY_COLOR=#7e5bff`
+  - `DEFAULT_LOGO_URL=…`
+  - `DEFAULT_HIDE_POWERED_BY=true`
+- Restrict return origins with `YOUPI_ALLOWED_RETURN_ORIGINS=https://shop.urltuneup.com`.
+- Firewall its admin ports (6001 and 8090).
+
+**Razorpay**:
+- Set the webhook to `/api/webhooks/razorpay` with the events `payment.captured` and `order.paid`.
+
+⚠️ **Before you go live:**
+- YouPI-PG calls itself experimental (it suggests about 20 transactions per day per VPA), and it has no license file. Get written permission from its authors before using it commercially.
+- Replace `/terms` and the sample testimonial with your real content.
