@@ -26,6 +26,33 @@ In `.env`, set `YOUPI_API_URL=http://localhost:6100`. After you check out, the m
 
 > **Local `prisma dev` only:** keep `pgbouncer=true` in `DATABASE_URL`. Without it you get "prepared statement already exists" errors.
 
+## End-to-end tests (Playwright)
+
+```bash
+npx playwright install chromium   # once
+npm run test:e2e                  # full suite: 82 tests, about 3 min
+npm run test:e2e:ui               # interactive runner
+npm run test:e2e:report           # open the last HTML report
+npm run test:e2e:prod             # READ-ONLY smoke test of https://shop.urltuneup.com
+```
+
+The suite runs on its own, so it can't touch real data:
+- `scripts/e2e-db.mjs` starts a **throwaway PostgreSQL** on port 54329, pushes the schema, and seeds it fresh on every run.
+- The mock YouPI gateway runs on :6200.
+- A production build of the app runs on :3100 and builds into `.next-e2e/`.
+- Real emails and Razorpay are switched off.
+
+| Spec | Covers |
+|---|---|
+| `storefront.spec.ts` | Hero, products, lazy video embeds, FAQ, announcement bar, real-only purchase toasts, product page, 404 and draft protection, SEO tags |
+| `checkout.spec.ts` | Summary, invalid and valid coupons, `?coupon=` links, order bump, validation. Full purchase through the mock gateway for LINK and LICENSE products, coupon usage, expired, pending→paid and under-review flows, access-key protection |
+| `api-security.spec.ts` | Server-side pricing, input validation, rate limiting. Webhook signature, replay window, spoof re-check, dedupe and reconcile. Download-token revocation, admin route protection, security headers |
+| `admin.spec.ts` | Login and logout, every admin page renders. Product create, edit, duplicate and delete reflected on the store. FAQ and coupon CRUD, settings, page builder publish. Approve, revoke, reconcile, CSV export, audit log |
+| `mobile.spec.ts` | No horizontal overflow, sticky buy bar, checkout on a phone viewport |
+| `prod-smoke.spec.ts` | Live site: pages load, a payment gateway is configured, admin is locked, webhooks reject unsigned calls, HTTPS headers |
+
+CI (`.github/workflows/test.yml`) runs typecheck, lint, unit tests and the e2e suite on every push. After a push to `main`, it also runs the live smoke test.
+
 ## How payments work
 
 1. `/api/checkout` recomputes the price on the server and creates a `PENDING` order. It then calls YouPI `POST /api/v1/payments` (or creates a Razorpay order) and redirects the buyer.

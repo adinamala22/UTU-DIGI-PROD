@@ -1,0 +1,12 @@
+# Never upload local env files: production config comes from Vercel env vars only.
+.env
+.env.*
+!.env.example
+# Local/test artefacts
+.e2e-db
+.next-e2e
+test-results
+playwright-report
+e2e/.auth
+storage
+email-preview.html

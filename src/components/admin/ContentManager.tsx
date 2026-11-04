@@ -62,11 +62,13 @@ export function ContentManager({
         <p className={r.enabled === false || r.active === false ? "truncate font-semibold text-white/40" : "truncate font-semibold text-white"}>{title(r)}</p>
         {summary && <p className="truncate text-xs text-muted">{summary(r)}</p>}
       </div>
-      <button className="btn-secondary !px-2" onClick={() => setEditing({ id: r.id, data: Object.fromEntries(fields.map((f) => [f.key, r[f.key]])) })}>
+      <button className="btn-secondary !px-2" title="Edit" aria-label="Edit" onClick={() => setEditing({ id: r.id, data: Object.fromEntries(fields.map((f) => [f.key, r[f.key]])) })}>
         <Pencil className="h-4 w-4" />
       </button>
       <button
         className="btn-danger !px-2"
+        title="Delete"
+        aria-label="Delete"
         onClick={() =>
           confirm("Delete this item?") &&
           start(async () => {

@@ -46,3 +46,10 @@ next-env.d.ts
 .vercel
 .env*
 email-preview.html
+
+# playwright
+/.next-e2e/
+/test-results/
+/playwright-report/
+/e2e/.auth/
+/.e2e-db/
